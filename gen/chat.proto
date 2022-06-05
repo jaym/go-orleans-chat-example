@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package goor.examples.chat;
+
+option go_package = "github.com/jaym/go-orleans-chat-example/gen";
+
+message JoinRequest {
+  string user_name = 1;
+  bool listen = 2;
+}
+
+message JoinResponse {}
+
+message ListenRequest {}
+
+message ChatMessage {
+  string from = 1;
+  string msg = 2;
+}
+
+message PublishResponse {};
+
+message LeaveRequest {
+  string user_name = 1;
+  string reason = 2;
+};
+
+message LeaveResponse {};
+
+service ChatRoom {
+  rpc Join(JoinRequest) returns (JoinResponse);
+  rpc Listen(ListenRequest) returns (stream ChatMessage);
+  rpc Publish(ChatMessage) returns (PublishResponse);
+  rpc Leave(LeaveRequest) returns (LeaveResponse);
+}
