@@ -7,23 +7,29 @@ import (
 
 	"github.com/jaym/go-orleans-chat-example/gen"
 	"github.com/jaym/go-orleans/grain"
+	"github.com/jaym/go-orleans/grain/services"
 )
 
 type ChatRoomGrainActivator struct {
 }
 
 func (*ChatRoomGrainActivator) Activate(ctx context.Context, identity grain.Identity,
-	services gen.ChatRoomGrainServices) (gen.ChatRoomGrain, error) {
+	svcs services.CoreGrainServices) (gen.ChatRoomGrain, error) {
+
+	observerManager := services.NewInMemoryGrainObserverManager[*gen.ListenRequest, *gen.ChatMessage](identity, "Listen", 5*time.Minute)
+
 	return &ChatRoomGrain{
-		services: services,
-		identity: identity,
-		users:    make(map[string]struct{}),
+		services:        svcs,
+		observerManager: observerManager,
+		identity:        identity,
+		users:           make(map[string]struct{}),
 	}, nil
 }
 
 type ChatRoomGrain struct {
-	services gen.ChatRoomGrainServices
-	identity grain.Identity
+	observerManager *services.InMemoryGrainObserverManager[*gen.ListenRequest, *gen.ChatMessage]
+	services        services.CoreGrainServices
+	identity        grain.Identity
 
 	users map[string]struct{}
 }
@@ -46,15 +52,14 @@ func (g *ChatRoomGrain) Join(ctx context.Context, req *gen.JoinRequest) (*gen.Jo
 func (g *ChatRoomGrain) RegisterListenObserver(ctx context.Context, observer grain.Identity,
 	registrationTimeout time.Duration, req *gen.ListenRequest) error {
 
-	err := g.services.AddListenObserver(ctx, observer, registrationTimeout, &gen.ListenRequest{})
-	if err != nil {
-		return err
-	}
+	g.observerManager.Add(observer, &gen.ListenRequest{})
+
 	return nil
 }
 
 func (g *ChatRoomGrain) UnsubscribeListenObserver(ctx context.Context, observer grain.Identity) error {
-	return g.services.RemoveListenObserver(ctx, observer)
+	g.observerManager.Remove(observer)
+	return nil
 }
 
 func (g *ChatRoomGrain) Leave(ctx context.Context, req *gen.LeaveRequest) (*gen.LeaveResponse, error) {
@@ -72,13 +77,7 @@ func (g *ChatRoomGrain) Leave(ctx context.Context, req *gen.LeaveRequest) (*gen.
 }
 
 func (g *ChatRoomGrain) Publish(ctx context.Context, req *gen.ChatMessage) (*gen.PublishResponse, error) {
-	observers, err := g.services.ListListenObservers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	err = g.services.NotifyListenObservers(ctx, observers, req)
-	if err != nil {
-		return nil, err
-	}
+	g.observerManager.NotifyAll(ctx, g.services.SiloClient(), req)
+
 	return &gen.PublishResponse{}, nil
 }

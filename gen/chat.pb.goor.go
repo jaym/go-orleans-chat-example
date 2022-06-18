@@ -10,42 +10,16 @@ import (
 	time "time"
 )
 
-type ChatRoomGrainServices interface {
-	CoreGrainServices() services.CoreGrainServices
-	NotifyListenObservers(ctx context.Context, observers []grain.RegisteredObserver, val *ChatMessage) error
-	ListListenObservers(ctx context.Context) ([]grain.RegisteredObserver, error)
-	AddListenObserver(ctx context.Context, observer grain.Identity, registrationTimeout time.Duration, req *ListenRequest) error
-	RemoveListenObserver(ctx context.Context, observer grain.Identity) error
-}
-
 type impl_ChatRoomGrainServices struct {
-	observerManager services.GrainObserverManager
-	coreServices    services.CoreGrainServices
+	coreServices services.CoreGrainServices
 }
 
 func (m *impl_ChatRoomGrainServices) CoreGrainServices() services.CoreGrainServices {
 	return m.coreServices
 }
 
-func (m *impl_ChatRoomGrainServices) NotifyListenObservers(ctx context.Context, observers []grain.RegisteredObserver, val *ChatMessage) error {
-	return m.observerManager.Notify(ctx, ChatRoomGrain_GrainDesc.Observables[0].Name, observers, val)
-}
-
-func (m *impl_ChatRoomGrainServices) ListListenObservers(ctx context.Context) ([]grain.RegisteredObserver, error) {
-	return m.observerManager.List(ctx, ChatRoomGrain_GrainDesc.Observables[0].Name)
-}
-
-func (m *impl_ChatRoomGrainServices) AddListenObserver(ctx context.Context, observer grain.Identity, registrationTimeout time.Duration, req *ListenRequest) error {
-	_, err := m.observerManager.Add(ctx, ChatRoomGrain_GrainDesc.Observables[0].Name, observer, registrationTimeout, req)
-	return err
-}
-
-func (m *impl_ChatRoomGrainServices) RemoveListenObserver(ctx context.Context, observer grain.Identity) error {
-	return m.observerManager.Remove(ctx, ChatRoomGrain_GrainDesc.Observables[0].Name, observer)
-}
-
 type ChatRoomGrainActivator interface {
-	Activate(ctx context.Context, identity grain.Identity, services ChatRoomGrainServices) (ChatRoomGrain, error)
+	Activate(ctx context.Context, identity grain.Identity, services services.CoreGrainServices) (ChatRoomGrain, error)
 }
 
 func RegisterChatRoomGrainActivator(registrar descriptor.Registrar, activator ChatRoomGrainActivator) {
@@ -162,12 +136,8 @@ var ChatRoomGrain_GrainDesc = descriptor.GrainDescription{
 	},
 }
 
-func _ChatRoomGrain_Activate(activator interface{}, ctx context.Context, coreServices services.CoreGrainServices, observerManager services.GrainObserverManager, identity grain.Identity) (grain.GrainReference, error) {
-	grainServices := &impl_ChatRoomGrainServices{
-		observerManager: observerManager,
-		coreServices:    coreServices,
-	}
-	return activator.(ChatRoomGrainActivator).Activate(ctx, identity, grainServices)
+func _ChatRoomGrain_Activate(activator interface{}, ctx context.Context, coreServices services.CoreGrainServices, identity grain.Identity) (grain.GrainReference, error) {
+	return activator.(ChatRoomGrainActivator).Activate(ctx, identity, coreServices)
 }
 
 func _ChatRoomGrain_Join_MethodHandler(srv interface{}, ctx context.Context, dec func(interface{}) error) (interface{}, error) {
