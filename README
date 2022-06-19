@@ -1,0 +1,38 @@
+## How to run
+
+Run each of these in a different terminal
+
+Node1:
+```
+go run . node 1
+```
+
+Node2:
+```
+go run . node 2
+```
+
+Client 1:
+```
+nc localhost 9501
+```
+
+Client 2:
+```
+nc localhost 9501
+```
+
+On Client 1:
+```
+/join room1
+```
+
+On Client 2:
+```
+/join room1
+```
+
+On Client 2:
+```
+/msg room1 hello
+```
