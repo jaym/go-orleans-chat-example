@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/stdr v1.1.0
 	github.com/jackc/pgx/v4 v4.13.0
-	github.com/jaym/go-orleans v0.0.0-20220101190629-0a7abb388d53
+	github.com/jaym/go-orleans v0.0.0-20220618195011-f34cbe5e6c87
 	google.golang.org/protobuf v1.28.0
 )
 
