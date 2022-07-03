@@ -41,7 +41,7 @@ func main() {
 		panic("wrong")
 	}
 
-	stdr.SetVerbosity(3)
+	stdr.SetVerbosity(10)
 	log := stdr.NewWithOptions(stdlog.New(os.Stderr, "", stdlog.LstdFlags), stdr.Options{LogCaller: stdr.All})
 
 	nodeName := os.Args[1]
