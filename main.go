@@ -111,7 +111,7 @@ func listen(listener net.Listener, servicePort int, s *silo.Silo, log logr.Logge
 				log.V(0).Error(err, "failed to create subscriber grain")
 				return
 			}
-			defer subscriber.Deactivate(context.Background())
+			defer s.DestroyGrain(subscriber)
 
 			stream, err := gen.CreateChatRoomGrainListenStream(subscriber)
 			if err != nil {
