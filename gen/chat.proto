@@ -18,7 +18,7 @@ message ChatMessage {
   string msg = 2;
 }
 
-message PublishResponse {};
+message SendMessageResponse { int64 count = 1; };
 
 message LeaveRequest {
   string user_name = 1;
@@ -26,10 +26,3 @@ message LeaveRequest {
 };
 
 message LeaveResponse {};
-
-service ChatRoom {
-  rpc Join(JoinRequest) returns (JoinResponse);
-  rpc Listen(ListenRequest) returns (stream ChatMessage);
-  rpc Publish(ChatMessage) returns (PublishResponse);
-  rpc Leave(LeaveRequest) returns (LeaveResponse);
-}

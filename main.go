@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v4/stdlib"
 
 	"github.com/jaym/go-orleans-chat-example/gen"
+	gengo "github.com/jaym/go-orleans-chat-example/gen-go"
 	"github.com/jaym/go-orleans/grain"
 	"github.com/jaym/go-orleans/plugins/discovery/static"
 	psql_quicksetup "github.com/jaym/go-orleans/quicksetup/psql"
@@ -37,6 +38,10 @@ func main() {
 		membershipPort = 9992
 		rpcPort = 8992
 		servicePort = 9502
+	case "node3":
+		membershipPort = 9993
+		rpcPort = 8993
+		servicePort = 9503
 	default:
 		panic("wrong")
 	}
@@ -62,7 +67,8 @@ func main() {
 		panic(err)
 	}
 
-	gen.RegisterChatRoomGrainActivator(s, &ChatRoomGrainActivator{})
+	// gen.RegisterChatRoomGrainActivator(s, &ChatRoomGrainActivator{})
+	gengo.RegisterChatRoomGrainActivator(s, &ChatRoomGrainActivatorImpl{})
 	if err := s.Start(context.Background()); err != nil {
 		panic(err)
 	}
@@ -93,123 +99,57 @@ func main() {
 func listen(listener net.Listener, servicePort int, s *silo.Silo, log logr.Logger) {
 	client := s.Client()
 
-	userNum := 0
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			log.V(0).Error(err, "failed to accept connection")
 			return
 		}
-		userName := fmt.Sprintf("user%04d%04d", servicePort, userNum)
-		userNum++
+
+		ctx := context.Background()
 		go func() {
 			defer conn.Close()
 			scanner := bufio.NewScanner(conn)
-
-			subscriber, err := s.CreateGrain()
+			observerGrain, err := s.CreateGrain()
 			if err != nil {
-				log.V(0).Error(err, "failed to create subscriber grain")
-				return
+				log.V(0).Error(err, "failed to create generic grain")
 			}
-			defer s.DestroyGrain(subscriber)
+			defer s.DestroyGrain(observerGrain)
 
-			stream, err := gen.CreateChatRoomGrainListenStream(subscriber)
-			if err != nil {
-				log.V(0).Error(err, "failed to create stream")
-				return
-			}
+			outChan := make(chan string, 10)
+			defer close(outChan)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			input := make(chan connInMsg, 10)
 			go func() {
-				streamC := stream.C()
-				rooms := map[string]gen.ChatRoomGrainRef{}
-				defer func() {
-					for _, room := range rooms {
-						_, err := room.Leave(context.Background(), &gen.LeaveRequest{
-							UserName: userName,
-						})
-						if err != nil {
-							log.V(0).Error(err, "leave failed")
-						}
-					}
-				}()
-
-				for {
-					line := ""
-				SEL:
-					select {
-					case <-ctx.Done():
-						return
-					case chatRoomMessage := <-streamC:
-						line = fmt.Sprintf("[%s@%s]: %s\n", chatRoomMessage.Value.From,
-							chatRoomMessage.Sender.ID, chatRoomMessage.Value.Msg)
-					case inMsg := <-input:
-						if inMsg.action == "/join" {
-							if len(inMsg.args) != 1 {
-								continue
-							}
-							ref := gen.GetChatRoomGrain(client, grain.Identity{
-								GrainType: "ChatRoomGrain",
-								ID:        inMsg.args[0],
-							})
-
-							_, err = ref.Join(ctx, &gen.JoinRequest{
-								UserName: userName,
-								Listen:   true,
-							})
-							if err != nil {
-								log.V(0).Error(err, "join failed")
-								line = "error\n"
-								break SEL
-							}
-
-							err = stream.Observe(
-								ctx,
-								grain.Identity{
-									GrainType: "ChatRoomGrain",
-									ID:        inMsg.args[0],
-								},
-								&gen.ListenRequest{},
-							)
-							if err != nil {
-								log.V(0).Error(err, "stream observe failed")
-								line = "error\n"
-								break SEL
-							}
-
-							rooms[inMsg.args[0]] = ref
-						} else if inMsg.action == "/msg" {
-							if len(inMsg.args) < 2 {
-								continue
-							}
-
-							if room, ok := rooms[inMsg.args[0]]; ok {
-								_, err := room.Publish(ctx, &gen.ChatMessage{
-									From: userName,
-									Msg:  strings.Join(inMsg.args[1:], " "),
-								})
-								if err != nil {
-									log.V(0).Error(err, "stream observe failed")
-									line = "error\n"
-								} else {
-									line = "messaged\n"
-								}
-							} else {
-								line = "not a member of the room\n"
-							}
-						} else if inMsg.action == "/leave" {
-							line = "left\n"
-						}
-					}
+				for line := range outChan {
 					if line != "" {
 						conn.Write([]byte(line))
 					}
 				}
-
 			}()
+
+			msgObserver, err := gengo.NewGenericMessageObserverBuilder().
+				OnReceive(func(ctx context.Context, sender grain.Identity, cm *gen.ChatMessage) {
+					outChan <- fmt.Sprintf("[%s@%s]: %s\n", cm.From,
+						sender.String(), cm.Msg)
+				}).Build(observerGrain)
+			if err != nil {
+				panic(err)
+			}
+
+			outChan <- "Enter username:\n"
+			var username string
+			if !scanner.Scan() {
+				outChan <- "[error] must enter username"
+				return
+			} else {
+				username = scanner.Text()
+			}
+			if scanner.Err() != nil {
+				log.Error(err, "an error occurred")
+				return
+			}
+
+			outChan <- "Enter Commands:\n"
 
 			for scanner.Scan() {
 				data := scanner.Text()
@@ -219,14 +159,206 @@ func listen(listener net.Listener, servicePort int, s *silo.Silo, log logr.Logge
 				}
 				action := strings.TrimSpace(parts[0])
 				args := parts[1:]
-				input <- connInMsg{
-					action: action,
-					args:   args,
+
+				line := "[ok] success\n"
+				switch action {
+				case "/join":
+					if len(args) != 1 {
+						line = "[error] incorrect args"
+						break
+					}
+					g := gengo.ChatRoomGrainRef(client, args[0])
+					_, err := g.Join(ctx, username, true)
+					if err != nil {
+						line = err.Error() + "\n"
+						break
+					}
+					token, err := g.RegisterMessageObserver(ctx, msgObserver, &gen.ListenRequest{})
+					if err != nil {
+						line = err.Error() + "\n"
+						break
+					}
+					line = token.String() + "\n"
+				case "/ping":
+					if len(args) != 1 {
+						line = "[error] incorrect args\n"
+						break
+					}
+					g := gengo.ChatRoomGrainRef(client, args[0])
+					g.Ping(ctx)
+				case "/msg":
+					if len(args) < 2 {
+						line = "[error] incorrect args\n"
+						break
+					}
+					g := gengo.ChatRoomGrainRef(client, args[0])
+					resp, ok, err := g.SendMessage(ctx, &gen.ChatMessage{
+						Msg:  strings.Join(args[1:], " "),
+						From: username,
+					})
+					if err != nil {
+						line = fmt.Sprintf("[error] %s\n", err.Error())
+					} else {
+						line = fmt.Sprintf("[ok] count=%d ok=%v\n", resp.Count, ok)
+					}
+				case "/users":
+					if len(args) != 1 {
+						line = "[error] incorrect args\n"
+						break
+					}
+					g := gengo.ChatRoomGrainRef(client, args[0])
+					users, err := g.ListUsers(ctx)
+					if err != nil {
+						line = fmt.Sprintf("[error] %s\n", err.Error())
+					} else {
+						line = fmt.Sprintf("[ok] =>\n%s\n", strings.Join(users, "\n"))
+					}
+				default:
+					line = "[error] unknown command\n"
 				}
+				outChan <- line
 			}
 		}()
 	}
 }
+
+// func listen(listener net.Listener, servicePort int, s *silo.Silo, log logr.Logger) {
+// 	client := s.Client()
+
+// 	userNum := 0
+// 	for {
+// 		conn, err := listener.Accept()
+// 		if err != nil {
+// 			log.V(0).Error(err, "failed to accept connection")
+// 			return
+// 		}
+// 		userName := fmt.Sprintf("user%04d%04d", servicePort, userNum)
+// 		userNum++
+// 		go func() {
+// 			defer conn.Close()
+// 			scanner := bufio.NewScanner(conn)
+
+// 			subscriber, err := s.CreateGrain()
+// 			if err != nil {
+// 				log.V(0).Error(err, "failed to create subscriber grain")
+// 				return
+// 			}
+// 			defer s.DestroyGrain(subscriber)
+
+// 			stream, err := gen.CreateChatRoomGrainListenStream(subscriber)
+// 			if err != nil {
+// 				log.V(0).Error(err, "failed to create stream")
+// 				return
+// 			}
+
+// 			ctx, cancel := context.WithCancel(context.Background())
+// 			defer cancel()
+
+// 			input := make(chan connInMsg, 10)
+// 			go func() {
+// 				streamC := stream.C()
+// 				rooms := map[string]gen.ChatRoomGrainRef{}
+// 				defer func() {
+// 					for _, room := range rooms {
+// 						_, err := room.Leave(context.Background(), &gen.LeaveRequest{
+// 							UserName: userName,
+// 						})
+// 						if err != nil {
+// 							log.V(0).Error(err, "leave failed")
+// 						}
+// 					}
+// 				}()
+
+// 				for {
+// 					line := ""
+// 				SEL:
+// 					select {
+// 					case <-ctx.Done():
+// 						return
+// 					case chatRoomMessage := <-streamC:
+// 						line = fmt.Sprintf("[%s@%s]: %s\n", chatRoomMessage.Value.From,
+// 							chatRoomMessage.Sender.ID, chatRoomMessage.Value.Msg)
+// 					case inMsg := <-input:
+// 						if inMsg.action == "/join" {
+// 							if len(inMsg.args) != 1 {
+// 								continue
+// 							}
+// 							ref := gen.GetChatRoomGrain(client, grain.Identity{
+// 								GrainType: "ChatRoomGrain",
+// 								ID:        inMsg.args[0],
+// 							})
+
+// 							_, err = ref.Join(ctx, &gen.JoinRequest{
+// 								UserName: userName,
+// 								Listen:   true,
+// 							})
+// 							if err != nil {
+// 								log.V(0).Error(err, "join failed")
+// 								line = "error\n"
+// 								break SEL
+// 							}
+
+// 							err = stream.Observe(
+// 								ctx,
+// 								grain.Identity{
+// 									GrainType: "ChatRoomGrain",
+// 									ID:        inMsg.args[0],
+// 								},
+// 								&gen.ListenRequest{},
+// 							)
+// 							if err != nil {
+// 								log.V(0).Error(err, "stream observe failed")
+// 								line = "error\n"
+// 								break SEL
+// 							}
+
+// 							rooms[inMsg.args[0]] = ref
+// 						} else if inMsg.action == "/msg" {
+// 							if len(inMsg.args) < 2 {
+// 								continue
+// 							}
+
+// 							if room, ok := rooms[inMsg.args[0]]; ok {
+// 								_, err := room.Publish(ctx, &gen.ChatMessage{
+// 									From: userName,
+// 									Msg:  strings.Join(inMsg.args[1:], " "),
+// 								})
+// 								if err != nil {
+// 									log.V(0).Error(err, "stream observe failed")
+// 									line = "error\n"
+// 								} else {
+// 									line = "messaged\n"
+// 								}
+// 							} else {
+// 								line = "not a member of the room\n"
+// 							}
+// 						} else if inMsg.action == "/leave" {
+// 							line = "left\n"
+// 						}
+// 					}
+// 					if line != "" {
+// 						conn.Write([]byte(line))
+// 					}
+// 				}
+
+// 			}()
+
+// 			for scanner.Scan() {
+// 				data := scanner.Text()
+// 				parts := strings.Split(data, " ")
+// 				if len(parts) == 0 {
+// 					continue
+// 				}
+// 				action := strings.TrimSpace(parts[0])
+// 				args := parts[1:]
+// 				input <- connInMsg{
+// 					action: action,
+// 					args:   args,
+// 				}
+// 			}
+// 		}()
+// 	}
+// }
 
 type connInMsg struct {
 	action string

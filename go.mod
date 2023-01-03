@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.2.0
 	github.com/go-logr/stdr v1.1.0
 	github.com/jackc/pgx/v4 v4.13.0
-	github.com/jaym/go-orleans v0.0.0-20220703184536-5b2bb655aaea
+	github.com/jaym/go-orleans v0.0.0-20230103000916-3eb050961cf0
 	google.golang.org/protobuf v1.28.0
 )
 
@@ -20,6 +20,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.15.1-0.20211015165204-1ba9becc5c8d // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/btree v1.0.0 // indirect
+	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
 	github.com/hashicorp/go-msgpack v0.5.3 // indirect
@@ -43,10 +44,12 @@ require (
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/segmentio/ksuid v1.0.4 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f // indirect
-	golang.org/x/sys v0.0.0-20211019181941-9d821ace8654 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/crypto v0.1.0 // indirect
+	golang.org/x/net v0.1.0 // indirect
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
+	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/text v0.4.0 // indirect
+	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/genproto v0.0.0-20211013025323-ce878158c4d4 // indirect
 	google.golang.org/grpc v1.41.0 // indirect
 )
